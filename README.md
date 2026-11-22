@@ -27,7 +27,7 @@ npm run dev
 
 ## Docker 部署
 
-以下步骤针对 **Debian 13、服务器已有 Nginx、80/443 正在服务其他网站** 的部署方式。容器只监听服务器本机的 `127.0.0.1:8080`，外部请求由 Nginx 根据域名转发；不要把容器端口直接开放到公网，也不要覆盖其他网站的 Nginx 配置。
+以下步骤针对 **Debian 13、服务器已有 Nginx、80/443 正在服务其他网站** 的部署方式。容器使用 Node.js 提供静态文件，不包含 Nginx；Compose 仅将其绑定到服务器本机的 `127.0.0.1:8002`，外部请求由宿主机 Nginx 按域名转发。不要把容器端口直接开放到公网，也不要覆盖其他网站的 Nginx 配置。
 
 ### 1. DNS 指向服务器
 
@@ -63,7 +63,7 @@ git clone https://github.com/woshiguwen/photo_id_maker.git /opt/photo_id_maker
 cd /opt/photo_id_maker
 ```
 
-默认端口为 `8080`。如果该端口已被占用，创建本地 `.env` 并改用空闲端口；`.env` 不会提交到 Git：
+默认端口为 `8002`。如果该端口已被占用，创建本地 `.env` 并改用空闲端口；`.env` 不会提交到 Git：
 
 ```bash
 printf 'PORT=8080\n' > .env
@@ -74,10 +74,10 @@ printf 'PORT=8080\n' > .env
 ```bash
 sudo docker compose up -d --build
 sudo docker compose ps
-curl -I http://127.0.0.1:8080
+curl -I http://127.0.0.1:8002
 ```
 
-最后一条命令应返回 `HTTP/1.1 200 OK`。如使用其他端口，下面 Nginx 配置中的 `8080` 也要改成相同端口。
+最后一条命令应返回 `HTTP/1.1 200 OK`。如使用其他端口，下面宿主机 Nginx 配置中的 `8002` 也要改成相同端口。
 
 ### 4. 在现有 Nginx 中添加域名转发
 
@@ -92,7 +92,7 @@ sudo systemctl reload nginx
 
 这会增加新的 `server_name id.coyer.top`，不会替换现有网站配置。若你的 Nginx 使用 `conf.d` 或其他配置目录，把同一配置文件放到该目录并确保主配置包含它；若该站点链接已存在，不要重复执行 `ln -s`。
 
-此时可先通过 `http://id.coyer.top` 检查域名转发。如果无法访问，检查 DNS 是否已指向本机、80 端口是否可达，以及 `curl -I http://127.0.0.1:8080` 是否成功。
+此时可先通过 `http://id.coyer.top` 检查域名转发。如果无法访问，检查 DNS 是否已指向服务器、80 端口是否可达，以及 `curl -I http://127.0.0.1:8002` 是否成功。
 
 ### 5. 为新域名启用 HTTPS
 
@@ -137,7 +137,7 @@ cd /opt/photo_id_maker
 sudo docker compose down
 ```
 
-Docker 使用多阶段构建：Node.js 阶段安装依赖并生成静态资源，Nginx 容器只发布构建产物；应用无需后端、数据库或持久化存储。
+Docker 使用多阶段构建：Node.js 构建阶段生成静态资源，Node.js 运行容器提供静态文件；Nginx 仅运行在宿主机并负责反向代理。应用无需后端、数据库或持久化存储。
 
 ## 构建
 
