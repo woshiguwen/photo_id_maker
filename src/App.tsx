@@ -2,9 +2,11 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import Konva from 'konva'
 import { Circle, Group, Image as KonvaImage, Layer, Line, Rect, Stage } from 'react-konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
+import Localized from './Localized'
+import { languages, translate, type Language } from './i18n'
 import './App.css'
 
-type PresetId = 'small' | 'one' | 'large-one' | 'small-two' | 'two' | 'custom'
+type PresetId = 'small' | 'one' | 'large-one' | 'one-and-half' | 'small-two' | 'two' | 'custom'
 type TabId = 'crop' | 'adjust' | 'layout'
 type SizeUnit = 'mm' | 'cm' | 'px'
 type PaperId = '5' | '6' | '7' | 'a4' | 'custom'
@@ -46,6 +48,7 @@ const presets: PhotoPreset[] = [
   { id: 'small', name: '小一寸', width: 2.2, height: 3.2, pixelWidth: 259, pixelHeight: 377, usage: '某些学籍照、报名' },
   { id: 'one', name: '标准一寸', width: 2.5, height: 3.5, pixelWidth: 295, pixelHeight: 413, usage: '身份证、学生证、银行卡' },
   { id: 'large-one', name: '大一寸', width: 3.3, height: 4.8, pixelWidth: 390, pixelHeight: 567, usage: '港澳通行证、某些签证' },
+  { id: 'one-and-half', name: '1.5寸', width: 3.3, height: 4.8, pixelWidth: 390, pixelHeight: 567, usage: '通用证件照规格' },
   { id: 'small-two', name: '小二寸', width: 3.5, height: 4.5, pixelWidth: 413, pixelHeight: 531, usage: '中国护照' },
   { id: 'two', name: '标准二寸', width: 3.5, height: 4.9, pixelWidth: 413, pixelHeight: 579, usage: '驾驶证、某些报名用' },
 ]
@@ -210,7 +213,7 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-function Icon({ name }: { name: 'image' | 'crop' | 'sliders' | 'grid' | 'download' | 'upload' | 'spark' | 'undo' }) {
+function Icon({ name }: { name: 'image' | 'crop' | 'sliders' | 'grid' | 'download' | 'upload' | 'spark' | 'undo' | 'language' }) {
   const paths: Record<typeof name, string> = {
     image: 'M4 5h16v14H4z M8 10h.01 M20 15l-5-5L5 19',
     crop: 'M7 3v14a2 2 0 0 0 2 2h12 M17 21V7a2 2 0 0 0-2-2H3',
@@ -220,6 +223,7 @@ function Icon({ name }: { name: 'image' | 'crop' | 'sliders' | 'grid' | 'downloa
     upload: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12',
     spark: 'm12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-2-5.8L4 11l6-2.2L12 3z M19 14l1.2 2.8L23 18l-2.8 1.2L19 22l-1.2-2.8L15 18l2.8-1.2L19 14z',
     undo: 'M3 7v6h6 M4.5 13a8 8 0 1 0 2.3-5.7L3 13',
+    language: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M2 12h20 M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
   }
   return (
     <svg aria-hidden="true" className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -229,6 +233,15 @@ function Icon({ name }: { name: 'image' | 'crop' | 'sliders' | 'grid' | 'downloa
 }
 
 function App() {
+  const [language, setLanguage] = useState<Language>(() => {
+    try {
+      const savedLanguage = window.localStorage.getItem('photo-id-maker-language')
+      return languages.find((item) => item.code === savedLanguage)?.code ?? 'zh-CN'
+    } catch {
+      return 'zh-CN'
+    }
+  })
+  const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false)
   const [imageUrl, setImageUrl] = useState('')
   const [imageName, setImageName] = useState('')
   const [sourceImage, setSourceImage] = useState<HTMLImageElement | null>(null)
@@ -272,9 +285,42 @@ function App() {
   const historyRef = useRef<EditorSnapshot[]>([])
   const createdUrlsRef = useRef(new Set<string>())
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const languageMenuRef = useRef<HTMLDivElement>(null)
+  const languageButtonRef = useRef<HTMLButtonElement>(null)
   const stageContainerRef = useRef<HTMLDivElement>(null)
   const imageNodeRef = useRef<Konva.Image>(null)
   const stageRef = useRef<Konva.Stage>(null)
+
+  useEffect(() => {
+    document.documentElement.lang = language
+    document.title = translate(language, '照相馆 · 证件照工坊')
+    const description = document.querySelector<HTMLMetaElement>('meta[name="description"]')
+    if (description) {
+      description.content = translate(language, '在浏览器中制作证件照：裁剪尺寸、调整色彩、替换底色、相纸排版并高清导出。')
+    }
+    try {
+      window.localStorage.setItem('photo-id-maker-language', language)
+    } catch {
+      // The selected language still applies for this session when storage is unavailable.
+    }
+  }, [language])
+
+  useEffect(() => {
+    if (!isLanguageMenuOpen) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !languageMenuRef.current?.contains(event.target)) {
+        setIsLanguageMenuOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
+  }, [isLanguageMenuOpen])
+
+  useEffect(() => {
+    if (isLanguageMenuOpen) {
+      languageMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')?.focus()
+    }
+  }, [isLanguageMenuOpen])
 
   const preset = useMemo<PhotoPreset>(() => {
     const selected = presets.find((item) => item.id === presetId)
@@ -727,7 +773,8 @@ function App() {
       const canvas = getOutputCanvas(width, height, activeTab === 'crop')
       const mime = format === 'jpeg' ? 'image/jpeg' : `image/${format}`
       const blob = await canvasToBlob(canvas, mime, 0.94)
-      downloadBlob(blob, `${imageName || '证件照'}-${preset.name}.${format === 'jpeg' ? 'jpg' : format}`)
+      const photoName = imageName || translate(language, '证件照')
+      downloadBlob(blob, `${photoName}-${translate(language, preset.name)}.${format === 'jpeg' ? 'jpg' : format}`)
       setStatusMessage(`已导出 ${preset.name}（${width} × ${height}px）。`)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '导出失败，请重试。')
@@ -782,7 +829,9 @@ function App() {
       }
       const mime = format === 'jpeg' ? 'image/jpeg' : `image/${format}`
       const blob = await canvasToBlob(canvas, mime, 0.94)
-      downloadBlob(blob, `${imageName || '证件照'}-${sheet.name}${paperOrientation === 'landscape' ? '横向' : '纵向'}排版.${format === 'jpeg' ? 'jpg' : format}`)
+      const photoName = imageName || translate(language, '证件照')
+      const orientation = paperOrientation === 'landscape' ? '横向' : '纵向'
+      downloadBlob(blob, `${photoName}-${translate(language, sheet.name)}-${translate(language, orientation)}-${translate(language, '排版')}.${format === 'jpeg' ? 'jpg' : format}`)
       setStatusMessage(`已导出${sheet.name}${paperOrientation === 'landscape' ? '横向' : '纵向'}排版，共 ${printCount} 张。`)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '排版导出失败，请重试。')
@@ -846,6 +895,26 @@ function App() {
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) pushHistory()
   }
 
+  const handleLanguageMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      setIsLanguageMenuOpen(false)
+      languageButtonRef.current?.focus()
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || !(event.target instanceof HTMLButtonElement)) return
+
+    const items = Array.from(languageMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [])
+    const currentIndex = items.indexOf(event.target)
+    if (currentIndex < 0 || items.length === 0) return
+    event.preventDefault()
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? items.length - 1
+        : (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+    items[nextIndex]?.focus()
+  }
+
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     setIsDraggingFile(false)
@@ -859,19 +928,57 @@ function App() {
   ]
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="#" aria-label="证件照工坊首页">
-          <span className="brand-mark"><Icon name="image" /></span>
-          <span>照相<span className="brand-light">馆</span></span>
-          <span className="brand-divider" />
-          <span className="brand-caption">证件照工坊</span>
-        </a>
-        <div className="header-note"><span className="privacy-dot" /> 图片仅在本地处理，不会上传</div>
-        <button className="header-open" type="button" onClick={openFilePicker}>
-          <Icon name="upload" /> 打开照片
-        </button>
-      </header>
+    <Localized language={language}>
+      <div className="app-shell">
+        <header className="topbar">
+          <a className="brand" href="#" aria-label="证件照工坊首页">
+            <span className="brand-mark"><Icon name="image" /></span>
+            <span>照相<span className="brand-light">馆</span></span>
+            <span className="brand-divider" />
+            <span className="brand-caption">证件照工坊</span>
+          </a>
+          <div className="header-note"><span className="privacy-dot" /> 图片仅在本地处理，不会上传</div>
+          <div className="header-actions">
+            <div className="language-menu" ref={languageMenuRef} onKeyDown={handleLanguageMenuKeyDown}>
+              <button
+                ref={languageButtonRef}
+                className="language-trigger"
+                type="button"
+                aria-label="选择语言"
+                aria-haspopup="menu"
+                aria-expanded={isLanguageMenuOpen}
+                aria-controls="language-menu"
+                onClick={() => setIsLanguageMenuOpen((open) => !open)}
+              >
+                <Icon name="language" />
+              </button>
+              {isLanguageMenuOpen && (
+                <div className="language-options" id="language-menu" role="menu" aria-label="选择语言">
+                  {languages.map((item) => (
+                    <button
+                      key={item.code}
+                      className="language-option"
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={language === item.code}
+                      onClick={() => {
+                        setLanguage(item.code)
+                        setIsLanguageMenuOpen(false)
+                        languageButtonRef.current?.focus()
+                      }}
+                    >
+                      <span>{item.label}</span>
+                      {language === item.code && <span className="language-check" aria-hidden="true">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button className="header-open" type="button" onClick={openFilePicker}>
+              <Icon name="upload" /> 打开照片
+            </button>
+          </div>
+        </header>
 
       <main className="main-content">
         <section className="workspace">
@@ -1217,7 +1324,7 @@ function App() {
                       </div>
                       <span className="preview-caption">{sheet.name} · {paperOrientation === 'landscape' ? '横向' : '纵向'}预览</span>
                     </div>
-                    <div className="layout-summary"><span>自动排列</span><strong>{columns} 列 × {rows} 行 <i>·</i> 共 {printCount} 张</strong></div>
+                    <div className="layout-summary"><span>自动排列</span><strong>{translate(language, `${columns} 列 × ${rows} 行 · 共 ${printCount} 张`)}</strong></div>
                     <div className="layout-summary"><span>照片间距</span><strong>{gap} mm <i>·</i> 整体居中</strong></div>
                     <div className="panel-tip"><span>✦</span> 像素按 300 DPI 计算，冲印时请使用“实际尺寸”。</div>
                   </div>
@@ -1266,8 +1373,9 @@ function App() {
       </main>
 
       <footer className="footer"><span>照相馆 <b>·</b> 让每一张证件照都刚刚好</span><span>免费使用 <b>·</b> 无需注册</span></footer>
-      <input ref={fileInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { setPhotoFile(event.target.files?.[0]); event.currentTarget.value = '' }} />
-    </div>
+        <input ref={fileInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { setPhotoFile(event.target.files?.[0]); event.currentTarget.value = '' }} />
+      </div>
+    </Localized>
   )
 }
 
